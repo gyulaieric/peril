@@ -38,13 +38,13 @@ L:
 		switch input[0] {
 		case "pause":
 			fmt.Println("Sending pause message...")
-			if err := sendMessage(channel, true); err != nil {
+			if err := sendPauseMessage(channel, true); err != nil {
 				log.Fatalf("Error sending message: %v", err)
 			}
 
 		case "resume":
 			fmt.Println("Sending resume message...")
-			if err := sendMessage(channel, false); err != nil {
+			if err := sendPauseMessage(channel, false); err != nil {
 				log.Fatalf("Error sending message: %v", err)
 			}
 
@@ -62,7 +62,7 @@ L:
 	}
 }
 
-func sendMessage(ch *amqp.Channel, paused bool) error {
+func sendPauseMessage(ch *amqp.Channel, paused bool) error {
 	if err := pubsub.PublishJSON(
 		ch, routing.ExchangePerilDirect,
 		routing.PauseKey,
