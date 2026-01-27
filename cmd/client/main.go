@@ -26,18 +26,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	_, _, err = pubsub.DeclareAndBind(
+	gamestate := gamelogic.NewGameState(username)
+	if err = pubsub.SubscribeJSON(
 		connection,
 		routing.ExchangePerilDirect,
-		routing.PauseKey+"."+username,
-		routing.PauseKey,
+		"pause."+username,
+		"pause",
 		pubsub.QueueTypeTransient,
-	)
-	if err != nil {
-		log.Fatalf("Error binding queue: %v", err)
+		handlerPause(gamestate),
+	); err != nil {
+		log.Fatal(err)
 	}
-
-	gamestate := gamelogic.NewGameState(username)
 
 L:
 	for {
@@ -71,4 +70,9 @@ L:
 			gamelogic.PrintClientHelp()
 		}
 	}
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	defer fmt.Print("> ")
+	return gs.HandlePause
 }

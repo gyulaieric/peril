@@ -26,7 +26,8 @@ func main() {
 		log.Fatalf("Error creating connection channel: %v", err)
 	}
 
-	gamelogic.PrintServerHelp()
+	queueName := "game_logs"
+	_, _, err = pubsub.DeclareAndBind(connection, routing.ExchangePerilTopic, queueName, queueName+".*", pubsub.QueueTypeDurable)
 
 L:
 	for {
