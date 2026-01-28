@@ -99,14 +99,21 @@ L:
 	}
 }
 
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.AckType {
 	defer fmt.Print("> ")
-	return gs.HandlePause
+	return func(ps routing.PlayingState) pubsub.AckType {
+		gs.HandlePause(ps)
+		return pubsub.AckTypeAck
+	}
 }
 
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.AckType {
 	defer fmt.Print("> ")
-	return func(mv gamelogic.ArmyMove) {
-		gs.HandleMove(mv)
+	return func(mv gamelogic.ArmyMove) pubsub.AckType {
+		outcome := gs.HandleMove(mv)
+		if outcome == gamelogic.MoveOutComeSafe || outcome == gamelogic.MoveOutcomeMakeWar {
+			return pubsub.AckTypeAck
+		}
+		return pubsub.AckTypeNackDiscard
 	}
 }
