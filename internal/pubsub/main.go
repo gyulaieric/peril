@@ -1,7 +1,9 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 
@@ -74,6 +76,76 @@ func SubscribeJSON[T any](
 	queueType SimpleQueueType,
 	handler func(T) AckType,
 ) error {
+	return subscribe(
+		conn,
+		exchange,
+		queueName,
+		key,
+		queueType,
+		handler,
+		func(val []byte) (T, error) {
+			var message T
+			if err := json.Unmarshal(val, &message); err != nil {
+				return message, err
+			}
+			return message, nil
+		},
+	)
+}
+
+func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+	if err := encoder.Encode(val); err != nil {
+		return fmt.Errorf("couldn't encode gob: %v", err)
+	}
+
+	if err := ch.PublishWithContext(context.Background(), exchange, key, false, false, amqp.Publishing{
+		ContentType: "application/gob",
+		Body:        buf.Bytes(),
+	}); err != nil {
+		return fmt.Errorf("couldn't publish message: %v", err)
+	}
+	return nil
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T) AckType,
+) error {
+	return subscribe(
+		conn,
+		exchange,
+		queueName,
+		key,
+		queueType,
+		handler,
+		func(val []byte) (T, error) {
+			buf := bytes.NewBuffer(val)
+			decoder := gob.NewDecoder(buf)
+
+			var message T
+			if err := decoder.Decode(&message); err != nil {
+				return message, err
+			}
+			return message, nil
+		},
+	)
+}
+
+func subscribe[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T) AckType,
+	unmarshaller func([]byte) (T, error),
+) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
@@ -86,10 +158,12 @@ func SubscribeJSON[T any](
 
 	go func() {
 		for delivery := range deliveryChan {
-			var message T
-			json.Unmarshal(delivery.Body, &message)
-			acktype := handler(message)
-			switch acktype {
+			message, err := unmarshaller(delivery.Body)
+			if err != nil {
+				fmt.Printf("Error unmarshaling message: %v", err)
+				continue
+			}
+			switch handler(message) {
 			case AckTypeAck:
 				delivery.Ack(false)
 				fmt.Println("Ack")

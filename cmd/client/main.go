@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -62,7 +63,7 @@ func main() {
 		routing.WarRecognitionsPrefix,
 		routing.WarRecognitionsPrefix+".*",
 		pubsub.QueueTypeDurable,
-		handlerWar(gamestate),
+		handlerWar(gamestate, publishCh),
 	); err != nil {
 		log.Fatal(err)
 	}
@@ -145,20 +146,58 @@ func handlerMove(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.ArmyM
 	}
 }
 
-func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.RecognitionOfWar) pubsub.AckType {
 	defer fmt.Print("> ")
 	return func(rw gamelogic.RecognitionOfWar) pubsub.AckType {
-		outcome, _, _ := gs.HandleWar(rw)
+		outcome, winner, loser := gs.HandleWar(rw)
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
 			return pubsub.AckTypeNackRequeue
+
 		case gamelogic.WarOutcomeNoUnits:
 			return pubsub.AckTypeNackDiscard
-		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon, gamelogic.WarOutcomeDraw:
+
+		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon:
+			if err := publishGameLog(
+				ch,
+				routing.GameLog{
+					CurrentTime: time.Now(),
+					Message:     fmt.Sprintf("%s won a war against %s", winner, loser),
+					Username:    gs.Player.Username,
+				},
+			); err != nil {
+				return pubsub.AckTypeNackRequeue
+			}
 			return pubsub.AckTypeAck
+
+		case gamelogic.WarOutcomeDraw:
+			if err := publishGameLog(
+				ch,
+				routing.GameLog{
+					CurrentTime: time.Now(),
+					Message:     fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser),
+					Username:    gs.Player.Username,
+				},
+			); err != nil {
+				return pubsub.AckTypeNackRequeue
+			}
+			return pubsub.AckTypeAck
+
 		default:
-			fmt.Println("Invalid war outcome")
+			fmt.Println("unknown war outcome")
 			return pubsub.AckTypeNackDiscard
 		}
 	}
+}
+
+func publishGameLog(ch *amqp.Channel, gl routing.GameLog) error {
+	if err := pubsub.PublishGob(
+		ch,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug+"."+gl.Username,
+		gl,
+	); err != nil {
+		return err
+	}
+	return nil
 }

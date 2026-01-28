@@ -27,7 +27,19 @@ func main() {
 	}
 
 	queueName := "game_logs"
-	_, _, err = pubsub.DeclareAndBind(connection, routing.ExchangePerilTopic, queueName, queueName+".*", pubsub.QueueTypeDurable)
+	key := queueName + ".*"
+	_, _, err = pubsub.DeclareAndBind(connection, routing.ExchangePerilTopic, queueName, key, pubsub.QueueTypeDurable)
+
+	if err := pubsub.SubscribeGob(
+		connection,
+		routing.ExchangePerilTopic,
+		queueName,
+		key,
+		pubsub.QueueTypeDurable,
+		handlerLog,
+	); err != nil {
+		log.Fatal(err)
+	}
 
 L:
 	for {
@@ -73,4 +85,12 @@ func sendPauseMessage(ch *amqp.Channel, paused bool) error {
 	}
 
 	return nil
+}
+
+func handlerLog(log routing.GameLog) pubsub.AckType {
+	defer fmt.Print("> ")
+	if err := gamelogic.WriteLog(log); err != nil {
+		return pubsub.AckTypeNackDiscard
+	}
+	return pubsub.AckTypeAck
 }
