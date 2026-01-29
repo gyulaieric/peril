@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -103,7 +104,29 @@ L:
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(input) < 2 {
+				fmt.Println("Usage: spam <number>")
+				continue
+			}
+			num, err := strconv.Atoi(input[1])
+			if err != nil {
+				fmt.Println("The provided argument is not an integer")
+				continue
+			}
+			for range num {
+				maliciousLog := gamelogic.GetMaliciousLog()
+				if err := publishGameLog(
+					publishCh,
+					routing.GameLog{
+						CurrentTime: time.Now(),
+						Message:     maliciousLog,
+						Username:    username,
+					},
+				); err != nil {
+					fmt.Println("Couldn't publish spam log")
+					continue
+				}
+			}
 		case "quit":
 			gamelogic.PrintQuit()
 			break L
